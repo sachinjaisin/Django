@@ -1,0 +1,51 @@
+name: Deploy Django to EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+
+    - name: Setup SSH Key
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+    - name: Deploy to EC2
+      run: |
+        ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+          # Navigate to project directory
+          cd /home/ubuntu/your-django-repo
+
+          # Stop Gunicorn before deploying (to avoid file conflicts)
+          sudo systemctl stop django_gunicorn || true
+
+          # Pull the latest code
+          git pull origin main
+
+          # Activate virtual environment
+          source venv/bin/activate
+
+          # Install dependencies
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+          # Run database migrations
+          python manage.py migrate
+
+          # Collect static files
+          python manage.py collectstatic --noinput
+
+          # Restart Gunicorn and Nginx
+          sudo systemctl start django_gunicorn
+          sudo systemctl restart nginx
+        EOF
